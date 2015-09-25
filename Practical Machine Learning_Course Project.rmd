@@ -1,0 +1,104 @@
+---
+title: "Practical Machine Learning_Course Project"
+author: "Sean.Huang"
+date: "2015年9月25日"
+output: html_document
+---
+# Exective Summary
+
+In this project, we are going to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. This report will cover:
+-How I built model
+-How I used cross validation
+-What i think the expected out of sample error is
+-Why I made the choices you did
+-Using the trained prediction model to predict 20 different test cases.
+
+
+## Data cleaning
+Remove zero variance, lots of missing, and unrelated variables, to provide clean input data.
+
+```{r}
+library(caret)
+set.seed(5781)
+dataTrain <- read.csv("pml-training.csv")
+dataTest <- read.csv("pml-testing.csv")
+
+# remove nearly zero variance variables
+nzv <- nearZeroVar(dataTrain)
+dataTrain <- dataTrain[, -nzv]
+dataTest <- dataTest[, -nzv]
+
+# remove NA
+columnNA <- sapply(dataTrain, function(x) mean(is.na(x))) > 0.95
+dataTrain <- dataTrain[, columnNA == FALSE]
+dataTest <- dataTest[, columnNA == FALSE]
+
+# dropping the unrelated variable such as serial numbers, names, time stamps, etc.
+dataTrain <- dataTrain[, -c(1:5)]
+dataTest <- dataTest[, -c(1:5)]
+
+```
+
+## Data Partition
+Leave some portion of data out of model training procedure, to estimate out of sample error later. Since we have certain amount of data, I decide to leave 25% of data to estimate the out of sample error of our trained model.
+
+```{r}
+TrainList <- createDataPartition(y=dataTrain$classe, p=0.75, list=F)
+dataTrainIn <- dataTrain[TrainList, ]
+dataTrainOut<- dataTrain[-TrainList, ]
+
+```
+
+## Model Building
+Because it is a classification problem, tree related method would be suitable. I decide to try random forest first to see wheter the model performance is acceptable, because it is a commonly used tree related mothod in data analysis competition, and usually performs well. 
+
+And I will also apply a 3-fold cross validation to make sure the model is stable, and choose good parameters. 
+```{r}
+# set up a 10-fold cross valiadation
+CrossVal <- trainControl(method="cv", number=3, verboseIter=T)
+
+# model training
+RForest <- train(classe ~ ., data=dataTrainIn, method="rf", trControl=CrossVal)
+
+RForest$finalModel
+
+```
+We can find that the best model using 500 trees and 27 variable to achieve really low error rate, which seems really good in the aspect of in sample eror. So we can move to next step to evaluate the out sample error of this model to see whether it is over-fitted.
+
+## Model evaluation
+Using out of sample data to evaluate the trained model, to see whether it is over fitted. This can validate whether the prediction ability of our model is limited to the training data.
+
+```{r}
+# use trained model to predict classe in validation set (ptrain2)
+OutPredict <- predict(RForest, newdata = dataTrainOut)
+
+# show confusion matrix to get estimate of out-of-sample error
+confusionMatrix(dataTrainOut$classe, OutPredict)
+```
+The accuracy is 0.9994, so the out of sample error is 0.06%, which is good. This shows our model is not over fitted, and have good prediction ability to new data. So it is reasonalbe to use random forest based model to predict the test data.
+
+
+## Perform test set prediction
+```{r}
+TestPredict <- predict(RForest, newdata = dataTest)
+
+# make sure the result is in character form
+TestPredict <- as.character(TestPredict)
+
+```
+ 
+## Create submission file
+```{r}
+# create function to write predictions to files
+pml_write_files <- function(x) {
+    n <- length(x)
+    for(i in 1:n) {
+        filename <- paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+    }
+}
+
+pml_write_files(TestPredict)
+```
